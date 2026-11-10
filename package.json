@@ -7,6 +7,9 @@
   "license": "ISC",
   "keywords": [],
   "main": "index.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "sign:tieba": "tsx src/sign_tieba.ts",
     "sign:bika": "tsx src/sign_bika.ts",

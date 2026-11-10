@@ -23,6 +23,20 @@ const LIKE_URL = 'http://c.tieba.baidu.com/c/f/forum/like'
 const TBS_URL = 'http://tieba.baidu.com/dc/common/tbs'
 const SIGN_URL = 'http://c.tieba.baidu.com/c/c/forum/sign'
 
+// TBS 令牌接口响应
+interface TbsResponse {
+  tbs: string
+}
+
+// 关注贴吧列表接口响应（部分字段）
+interface ForumListResponse {
+  has_more: string
+  forum_list: {
+    'non-gconforum': unknown[]
+    'gconforum': unknown[]
+  }
+}
+
 // 贴吧信息接口
 interface Forum {
   id: string
@@ -50,7 +64,7 @@ interface SignResult {
  * 签到统计接口
  */
 interface UserSignStats {
-  /** 用户标识（BDUSS前8位） */
+  /** 用户标识（BDUSS 哈希摘要前 8 位，用于日志脱敏） */
   userId: string
   /** 总贴吧数 */
   totalForums: number
@@ -69,6 +83,11 @@ export class TiebaAutoSign {
   }
 
   private static readonly SIGN_KEY = 'tiebaclient!!!'
+
+  /** 生成 BDUSS 的哈希摘要（仅用于日志标识，不泄露凭证内容） */
+  private static hashBduss(bduss: string): string {
+    return createHash('sha256').update(bduss).digest('hex').slice(0, 8)
+  }
 
   // 编码请求数据并生成签名
   private static encodeData(data: Record<string, string>): Record<string, string> {
@@ -116,7 +135,7 @@ export class TiebaAutoSign {
         throw new Error(`获取失败: ${response.status} ${response.statusText}`)
       }
 
-      const data = await response.json()
+      const data = await response.json() as TbsResponse
       Logger.info(`获取成功，TBS: ${data.tbs.slice(0, 8)}...`)
       Logger.groupEnd('获取TBS令牌')
       return data.tbs
@@ -140,7 +159,7 @@ export class TiebaAutoSign {
           throw new Error(`重试失败: ${response.status} ${response.statusText}`)
         }
 
-        const data = await response.json()
+        const data = await response.json() as TbsResponse
         Logger.info(`重试成功，TBS: ${data.tbs.slice(0, 8)}...`)
         return data.tbs
       }
@@ -185,12 +204,12 @@ export class TiebaAutoSign {
           throw new Error(`获取失败: ${response.status} ${response.statusText}`)
         }
 
-        const resData = await response.json()
+        const resData = await response.json() as ForumListResponse
         const nonGconforum = resData.forum_list['non-gconforum'] || []
         const gconforum = resData.forum_list.gconforum || []
 
         // 扁平化处理嵌套数组
-        const pageForums = [...nonGconforum, ...gconforum].flat(Infinity).filter((f: any) => f.id && f.name).map((f: any) => ({ id: f.id, name: f.name }))
+        const pageForums = [...nonGconforum, ...gconforum].flat(Infinity).filter((f): f is Forum => typeof f === 'object' && f !== null && 'id' in f && 'name' in f).map(f => ({ id: f.id, name: f.name }))
 
         forums.push(...pageForums)
         total += pageForums.length
@@ -207,7 +226,8 @@ export class TiebaAutoSign {
     catch (error) {
       Logger.error(`获取失败: ${error}`)
       Logger.groupEnd('获取关注的贴吧列表')
-      return []
+      // 抛出异常交由上层统一处理，避免静默失败掩盖真实错误
+      throw error instanceof Error ? error : new Error(String(error))
     }
   }
 
@@ -284,7 +304,8 @@ export class TiebaAutoSign {
   // 执行单个用户的签到流程，返回统计信息
   public static async signForUser(bduss: string): Promise<UserSignStats> {
     Logger.group(`用户签到流程`)
-    const userId = bduss.slice(0, 8)
+    // 使用哈希摘要标识用户，避免日志泄露 BDUSS
+    const userId = this.hashBduss(bduss)
     const stats: UserSignStats = {
       userId,
       totalForums: 0,
@@ -357,7 +378,7 @@ export class TiebaAutoSign {
     for (let i = 0; i < bdussList.length; i++) {
       const bduss = bdussList[i]
       Logger.group(`处理用户 #${i + 1}/${bdussList.length}`)
-      Logger.info(`用户 #${i + 1} BDUSS: ${bduss.slice(0, 8)}...`)
+      Logger.info(`用户 #${i + 1} 标识: ${this.hashBduss(bduss)}`)
 
       try {
         const stats = await this.signForUser(bduss)
@@ -367,7 +388,7 @@ export class TiebaAutoSign {
         Logger.error(`用户 #${i + 1} 签到异常: ${error}`)
         // 添加异常统计
         allStats.push({
-          userId: bduss.slice(0, 8),
+          userId: this.hashBduss(bduss),
           totalForums: 0,
           successfulSigns: 0,
           failedSigns: 0,
