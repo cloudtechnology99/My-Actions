@@ -8,7 +8,7 @@
 2. 点击 Settings -> Secrets -> 点击绿色按钮 (如无绿色按钮说明已激活。直接到第三步。)
 3. 新增 new secret 并设置 Secrets:
 4. 双击右上角自己仓库 Star 触发
-5. **必须** - 请随便找个文件(例如`README.md`)，加个空格提交一下，否则可能会出现无法定时执行的问题
+5. **仓库保活已自动化** - [keepalive workflow](./.github/workflows/keepalive.yml) 每周自动检查仓库活动：距最后一次提交超过 45 天时，会以 `github-actions[bot]` 身份自动创建一次空提交，防止 GitHub 对 60 天无活动的公开仓库自动禁用定时任务（此前需要手动加空格提交的操作不再必须）。注意：若 workflow 已被禁用，保活无法自救，需手动在 Actions 中重新 `enable workflows`
 6. 由于规则更新,可能会 Fork 后会默认禁用,请手动点击 Actions 选择要签到的项目 `enable workflows`激活
 7. [定时执行](#定时执行)
 
@@ -24,10 +24,12 @@ pnpm install
 1. [自动打哔咔](./src/sign_bika.ts)
 2. [贴吧自动签到](./src/sign_tieba.ts)
 3. [联想延保签到](./src/sign_lenovo.ts)
+4. [仓库保活 keepalive](./.github/workflows/keepalive.yml)：防止定时任务因 60 天无活动被禁用
 
 # 定时执行
 
 1. 支持手动执行，具体在 Actions 中选中要执行的 Workflows 后再在右侧可以看到 Run workflow，点击即可运行此 workflow。
+   - `keepalive` workflow 同样支持手动触发（Run workflow），可勾选 `force` 跳过 45 天阈值立即创建保活提交，用于首次部署验证或 workflow 重新启用后强制恢复。
 
 2. 如果嫌上一步麻烦的，也可以直接点击一下 star，你会发现所有的 workflow 都已执行。
 
